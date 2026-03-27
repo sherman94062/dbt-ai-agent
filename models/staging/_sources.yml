@@ -1,0 +1,161 @@
+version: 2
+
+sources:
+  - name: tpch
+    description: "TPC-H benchmark dataset (scale factor 0.1)"
+    database: tpch
+    schema: public
+    tables:
+      - name: region
+        description: "Geographic regions (5 rows: AFRICA, AMERICA, ASIA, EUROPE, MIDDLE EAST)"
+        columns:
+          - name: r_regionkey
+            description: "Primary key for region"
+          - name: r_name
+            description: "Region name"
+          - name: r_comment
+            description: "Comment field"
+
+      - name: nation
+        description: "Nations/countries (25 rows)"
+        columns:
+          - name: n_nationkey
+            description: "Primary key for nation"
+          - name: n_name
+            description: "Nation name"
+          - name: n_regionkey
+            description: "Foreign key to region"
+          - name: n_comment
+            description: "Comment field"
+
+      - name: customer
+        description: "Customer records"
+        columns:
+          - name: c_custkey
+            description: "Primary key for customer"
+          - name: c_name
+            description: "Customer name"
+          - name: c_address
+            description: "Customer address"
+          - name: c_nationkey
+            description: "Foreign key to nation"
+          - name: c_phone
+            description: "Customer phone number"
+          - name: c_acctbal
+            description: "Account balance"
+          - name: c_mktsegment
+            description: "Market segment (AUTOMOBILE, BUILDING, FURNITURE, MACHINERY, HOUSEHOLD)"
+          - name: c_comment
+            description: "Comment field"
+
+      - name: supplier
+        description: "Supplier records"
+        columns:
+          - name: s_suppkey
+            description: "Primary key for supplier"
+          - name: s_name
+            description: "Supplier name"
+          - name: s_address
+            description: "Supplier address"
+          - name: s_nationkey
+            description: "Foreign key to nation"
+          - name: s_phone
+            description: "Supplier phone number"
+          - name: s_acctbal
+            description: "Account balance"
+          - name: s_comment
+            description: "Comment field"
+
+      - name: part
+        description: "Parts/products catalog"
+        columns:
+          - name: p_partkey
+            description: "Primary key for part"
+          - name: p_name
+            description: "Part name"
+          - name: p_mfgr
+            description: "Manufacturer"
+          - name: p_brand
+            description: "Brand"
+          - name: p_type
+            description: "Part type (e.g. ECONOMY ANODIZED STEEL)"
+          - name: p_size
+            description: "Part size"
+          - name: p_container
+            description: "Container type"
+          - name: p_retailprice
+            description: "Retail price"
+          - name: p_comment
+            description: "Comment field"
+
+      - name: partsupp
+        description: "Part-supplier relationships"
+        columns:
+          - name: ps_partkey
+            description: "Foreign key to part"
+          - name: ps_suppkey
+            description: "Foreign key to supplier"
+          - name: ps_availqty
+            description: "Available quantity"
+          - name: ps_supplycost
+            description: "Supply cost"
+          - name: ps_comment
+            description: "Comment field"
+
+      - name: orders
+        description: "Customer orders"
+        columns:
+          - name: o_orderkey
+            description: "Primary key for order"
+          - name: o_custkey
+            description: "Foreign key to customer"
+          - name: o_orderstatus
+            description: "Order status (F=fulfilled, O=open, P=pending)"
+          - name: o_totalprice
+            description: "Total order price"
+          - name: o_orderdate
+            description: "Order date"
+          - name: o_orderpriority
+            description: "Order priority (1-URGENT, 2-HIGH, 3-MEDIUM, 4-NOT SPECIFIED, 5-LOW)"
+          - name: o_clerk
+            description: "Clerk identifier"
+          - name: o_shippriority
+            description: "Shipping priority"
+          - name: o_comment
+            description: "Comment field"
+
+      - name: lineitem
+        description: "Order line items (main fact table)"
+        columns:
+          - name: l_orderkey
+            description: "Foreign key to orders"
+          - name: l_partkey
+            description: "Foreign key to part"
+          - name: l_suppkey
+            description: "Foreign key to supplier"
+          - name: l_linenumber
+            description: "Line number within order"
+          - name: l_quantity
+            description: "Quantity ordered"
+          - name: l_extendedprice
+            description: "Extended price (quantity * unit price)"
+          - name: l_discount
+            description: "Discount percentage (0.00 to 0.10)"
+          - name: l_tax
+            description: "Tax percentage"
+          - name: l_returnflag
+            description: "Return flag (R=returned, A=accepted, N=none)"
+          - name: l_linestatus
+            description: "Line status"
+          - name: l_shipdate
+            description: "Ship date"
+          - name: l_commitdate
+            description: "Commit date"
+          - name: l_receiptdate
+            description: "Receipt date"
+          - name: l_shipinstruct
+            description: "Shipping instructions"
+          - name: l_shipmode
+            description: "Shipping mode"
+          - name: l_comment
+            description: "Comment field"

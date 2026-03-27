@@ -1,0 +1,280 @@
+version: 2
+
+models:
+  - name: fct_order_items
+    description: "Fact table containing order line items with customer and order context"
+    columns:
+      - name: order_id
+        description: "Order identifier"
+      - name: line_number
+        description: "Line number within order"
+      - name: part_id
+        description: "Part identifier"
+      - name: supplier_id
+        description: "Supplier identifier"
+      - name: customer_id
+        description: "Customer identifier"
+      - name: customer_name
+        description: "Customer name"
+      - name: market_segment
+        description: "Customer market segment"
+      - name: customer_nation_id
+        description: "Customer nation identifier"
+      - name: customer_nation
+        description: "Customer nation name"
+      - name: customer_region
+        description: "Customer region name"
+      - name: order_date
+        description: "Date order was placed"
+      - name: order_status
+        description: "Order status (F=fulfilled, O=open, P=pending)"
+      - name: order_priority
+        description: "Order priority level"
+      - name: ship_date
+        description: "Date item was shipped"
+      - name: commit_date
+        description: "Committed delivery date"
+      - name: receipt_date
+        description: "Date item was received"
+      - name: return_flag
+        description: "Return flag (R=returned, A=accepted, N=none)"
+      - name: line_status
+        description: "Line item status"
+      - name: ship_mode
+        description: "Shipping mode"
+      - name: quantity
+        description: "Quantity ordered"
+      - name: extended_price
+        description: "Extended price before discount"
+      - name: discount
+        description: "Discount percentage"
+      - name: tax
+        description: "Tax percentage"
+      - name: line_revenue
+        description: "Revenue after discount: extended_price * (1 - discount)"
+      - name: line_revenue_with_tax
+        description: "Revenue including tax"
+      - name: order_total_price
+        description: "Total order price"
+      - name: fulfillment_days
+        description: "Days from order to shipment"
+
+  - name: dim_customers
+    description: "Customer dimension with geographic attributes"
+    columns:
+      - name: customer_id
+        description: "Primary key"
+      - name: customer_name
+        description: "Customer name"
+      - name: address
+        description: "Customer address"
+      - name: phone
+        description: "Customer phone"
+      - name: account_balance
+        description: "Account balance"
+      - name: market_segment
+        description: "Market segment"
+      - name: nation_id
+        description: "Nation identifier"
+      - name: nation_name
+        description: "Nation name"
+      - name: region_id
+        description: "Region identifier"
+      - name: region_name
+        description: "Region name"
+
+  - name: dim_suppliers
+    description: "Supplier dimension with geographic attributes"
+    columns:
+      - name: supplier_id
+        description: "Primary key"
+      - name: supplier_name
+        description: "Supplier name"
+      - name: address
+        description: "Supplier address"
+      - name: phone
+        description: "Supplier phone"
+      - name: account_balance
+        description: "Account balance"
+      - name: nation_id
+        description: "Nation identifier"
+      - name: nation_name
+        description: "Nation name"
+      - name: region_id
+        description: "Region identifier"
+      - name: region_name
+        description: "Region name"
+
+  - name: metricflow_time_spine
+    description: "Time spine table for MetricFlow"
+    time_spine:
+      standard_granularity_column: date_day
+    columns:
+      - name: date_day
+        description: "Calendar date"
+        granularity: day
+
+
+semantic_models:
+  - name: order_items
+    description: "Order line items fact table for revenue and fulfillment analysis"
+    model: ref('fct_order_items')
+    defaults:
+      agg_time_dimension: order_date
+
+    entities:
+      - name: order_item
+        type: primary
+        expr: order_id || '-' || line_number
+      - name: order
+        type: foreign
+        expr: order_id
+      - name: customer
+        type: foreign
+        expr: customer_id
+      - name: supplier
+        type: foreign
+        expr: supplier_id
+      - name: part
+        type: foreign
+        expr: part_id
+
+    dimensions:
+      - name: order_date
+        type: time
+        type_params:
+          time_granularity: day
+        expr: order_date
+      - name: ship_date
+        type: time
+        type_params:
+          time_granularity: day
+        expr: ship_date
+      - name: order_status
+        type: categorical
+        expr: order_status
+      - name: order_priority
+        type: categorical
+        expr: order_priority
+      - name: market_segment
+        type: categorical
+        expr: market_segment
+      - name: customer_nation
+        type: categorical
+        expr: customer_nation
+      - name: customer_region
+        type: categorical
+        expr: customer_region
+      - name: return_flag
+        type: categorical
+        expr: return_flag
+      - name: ship_mode
+        type: categorical
+        expr: ship_mode
+
+    measures:
+      - name: total_revenue
+        description: "Total revenue after discounts"
+        agg: sum
+        expr: line_revenue
+      - name: total_quantity
+        description: "Total quantity of items"
+        agg: sum
+        expr: quantity
+      - name: order_count
+        description: "Count of distinct orders"
+        agg: count_distinct
+        expr: order_id
+      - name: line_count
+        description: "Count of line items"
+        agg: count
+        expr: "1"
+      - name: total_extended_price
+        description: "Total extended price before discounts"
+        agg: sum
+        expr: extended_price
+      - name: avg_discount
+        description: "Average discount rate"
+        agg: average
+        expr: discount
+      - name: avg_fulfillment_days
+        description: "Average days from order to shipment"
+        agg: average
+        expr: fulfillment_days
+      - name: returned_items
+        description: "Count of returned items"
+        agg: sum
+        expr: "case when return_flag = 'R' then 1 else 0 end"
+
+
+metrics:
+  - name: total_revenue
+    description: "Total revenue generated (extended_price * (1 - discount))"
+    type: simple
+    label: "Total Revenue"
+    type_params:
+      measure: total_revenue
+
+  - name: order_count
+    description: "Count of distinct orders"
+    type: simple
+    label: "Order Count"
+    type_params:
+      measure: order_count
+
+  - name: avg_order_value
+    description: "Average order value (total_revenue / order_count)"
+    type: derived
+    label: "Average Order Value"
+    type_params:
+      expr: total_revenue / nullif(order_count, 0)
+      metrics:
+        - name: total_revenue
+        - name: order_count
+
+  - name: total_quantity
+    description: "Total quantity of items ordered"
+    type: simple
+    label: "Total Quantity"
+    type_params:
+      measure: total_quantity
+
+  - name: avg_discount
+    description: "Average discount rate across line items"
+    type: simple
+    label: "Average Discount"
+    type_params:
+      measure: avg_discount
+
+  - name: fulfillment_days
+    description: "Average days from order to shipment"
+    type: simple
+    label: "Fulfillment Days"
+    type_params:
+      measure: avg_fulfillment_days
+
+  - name: return_rate
+    description: "Percentage of items that were returned"
+    type: derived
+    label: "Return Rate"
+    type_params:
+      expr: cast(returned_items as double precision) / nullif(line_count, 0)
+      metrics:
+        - name: returned_items
+          offset_window: null
+        - name: line_count
+          offset_window: null
+
+  - name: returned_items
+    description: "Count of returned items"
+    type: simple
+    label: "Returned Items"
+    type_params:
+      measure: returned_items
+
+  - name: line_count
+    description: "Count of line items"
+    type: simple
+    label: "Line Count"
+    type_params:
+      measure: line_count

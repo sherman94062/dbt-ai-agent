@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+ENV/
+
+# dbt
+target/
+dbt_packages/
+logs/
+.user.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+audit.db
+*.db
+
+# Secrets
+.env
+.envrc
+*.pem
+*.key
+
+# Claude Code
+.claude/
