@@ -522,6 +522,185 @@ def render_schema_tab(context: dict):
     """, language="text")
 
 
+def render_pipeline_tab(context: dict):
+    """Render the dbt pipeline explanation tab."""
+    from pathlib import Path
+
+    st.markdown("### 🔧 dbt Pipeline: How It Works")
+    st.markdown("See how dbt transforms raw tables into analytics-ready models")
+
+    st.markdown("---")
+
+    # Overview
+    st.markdown("""
+    #### The dbt Compilation Process
+
+    ```
+    ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
+    │  Source SQL     │      │  Compiled SQL   │      │  PostgreSQL     │
+    │  (models/*.sql) │  →   │  (target/...)   │  →   │  (views/tables) │
+    │  with {{ ref }} │      │  resolved refs  │      │  actual objects │
+    └─────────────────┘      └─────────────────┘      └─────────────────┘
+    ```
+
+    **dbt reads** your SQL files with Jinja templates, **compiles** them by resolving
+    `{{ source() }}` and `{{ ref() }}` to actual table names, then **executes** the
+    SQL against PostgreSQL to create views or tables.
+    """)
+
+    st.markdown("---")
+
+    # Staging Models Section
+    st.markdown("## 🔵 Staging Models (Views)")
+    st.markdown("""
+    Staging models **clean and rename** raw source columns. They're materialized as
+    **views** (not tables), so they don't store data — they compute on-the-fly.
+    """)
+
+    staging_models = [
+        ("stg_orders", "orders"),
+        ("stg_lineitems", "lineitem"),
+        ("stg_customers", "customer"),
+        ("stg_suppliers", "supplier"),
+        ("stg_nations", "nation + region"),
+        ("stg_parts", "part"),
+    ]
+
+    for model_name, source_desc in staging_models:
+        with st.expander(f"📄 **{model_name}** ← {source_desc}", expanded=False):
+            col1, col2 = st.columns(2)
+
+            # Source SQL
+            source_path = Path(f"models/staging/{model_name}.sql")
+            compiled_path = Path(f"target/compiled/tpch_agent/models/staging/{model_name}.sql")
+            run_path = Path(f"target/run/tpch_agent/models/staging/{model_name}.sql")
+
+            with col1:
+                st.markdown("**Source SQL** (what you write)")
+                if source_path.exists():
+                    st.code(source_path.read_text(), language="sql")
+                else:
+                    st.warning(f"File not found: {source_path}")
+
+            with col2:
+                st.markdown("**Compiled SQL** (refs resolved)")
+                if compiled_path.exists():
+                    st.code(compiled_path.read_text(), language="sql")
+                else:
+                    st.warning("Run `dbt build` to generate compiled SQL")
+
+            # Show what dbt actually executes
+            st.markdown("**Executed SQL** (what runs in PostgreSQL)")
+            if run_path.exists():
+                st.code(run_path.read_text(), language="sql")
+            else:
+                st.info("Run `dbt build` to see executed SQL")
+
+    st.markdown("---")
+
+    # Mart Models Section
+    st.markdown("## 🟢 Mart Models (Tables)")
+    st.markdown("""
+    Mart models **join staging models** together into analytics-ready tables.
+    They're materialized as **tables** (physically stored), so queries are fast.
+    """)
+
+    mart_models = [
+        ("fct_order_items", "Main fact table - joins orders, lineitems, customers, nations"),
+        ("dim_customers", "Customer dimension - customers + nations + regions"),
+        ("dim_suppliers", "Supplier dimension - suppliers + nations + regions"),
+    ]
+
+    for model_name, description in mart_models:
+        with st.expander(f"📊 **{model_name}** — {description}", expanded=False):
+            col1, col2 = st.columns(2)
+
+            source_path = Path(f"models/marts/{model_name}.sql")
+            compiled_path = Path(f"target/compiled/tpch_agent/models/marts/{model_name}.sql")
+
+            with col1:
+                st.markdown("**Source SQL** (with `{{ ref() }}`)")
+                if source_path.exists():
+                    st.code(source_path.read_text(), language="sql")
+                else:
+                    st.warning(f"File not found: {source_path}")
+
+            with col2:
+                st.markdown("**Compiled SQL** (refs → table names)")
+                if compiled_path.exists():
+                    st.code(compiled_path.read_text(), language="sql")
+                else:
+                    st.warning("Run `dbt build` to generate compiled SQL")
+
+            # Key point about materialization
+            st.info(f"💡 **{model_name}** is materialized as a TABLE — data is physically stored in PostgreSQL for fast queries.")
+
+    st.markdown("---")
+
+    # Semantic Layer Section
+    st.markdown("## 🔮 Semantic Layer (YAML Configuration)")
+    st.markdown("""
+    The semantic layer is **not SQL** — it's YAML configuration that defines:
+    - **Metrics**: Business calculations (e.g., `total_revenue = SUM(line_revenue)`)
+    - **Dimensions**: Ways to slice data (e.g., `market_segment`, `order_date`)
+    - **Entities**: Keys that link tables (e.g., `customer_id`, `order_id`)
+
+    This metadata is stored in `target/semantic_manifest.json` after `dbt build`.
+    """)
+
+    # Show the YAML
+    yaml_path = Path("models/marts/_models.yml")
+    if yaml_path.exists():
+        yaml_content = yaml_path.read_text()
+
+        # Split into sections for display
+        with st.expander("📄 **_models.yml** — Semantic Layer Definition", expanded=False):
+            st.code(yaml_content, language="yaml")
+
+    # Show semantic manifest excerpt
+    st.markdown("#### Compiled Semantic Manifest")
+    st.markdown("After `dbt build`, the YAML compiles to `target/semantic_manifest.json`:")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**Metrics** (from manifest)")
+        for metric in context.get('metrics', [])[:5]:
+            st.markdown(f"""
+            - **{metric['name']}** ({metric.get('type', 'simple')})
+              - {metric.get('description', '')}
+              - Measure: `{metric.get('measure', metric.get('expression', 'N/A'))}`
+            """)
+        if len(context.get('metrics', [])) > 5:
+            st.caption(f"... and {len(context['metrics']) - 5} more metrics")
+
+    with col2:
+        st.markdown("**Dimensions** (from manifest)")
+        for sm in context.get('semantic_models', []):
+            for dim in sm.get('dimensions', [])[:5]:
+                st.markdown(f"- **{dim['name']}** ({dim['type']})")
+            if len(sm.get('dimensions', [])) > 5:
+                st.caption(f"... and {len(sm['dimensions']) - 5} more dimensions")
+
+    st.markdown("---")
+
+    # dbt Commands Reference
+    st.markdown("## ⌨️ dbt Commands Reference")
+
+    commands = {
+        "dbt build": "Compile + run all models, tests, and snapshots",
+        "dbt compile": "Compile SQL without executing (generates target/compiled/)",
+        "dbt run": "Execute models (create views/tables)",
+        "dbt test": "Run data tests",
+        "dbt docs generate": "Generate documentation site",
+        "dbt parse": "Parse project and generate manifest.json",
+    }
+
+    for cmd, desc in commands.items():
+        st.code(cmd, language="bash")
+        st.caption(desc)
+
+
 def render_metrics_tab(context: dict):
     """Render the metrics explorer tab."""
 
@@ -615,7 +794,7 @@ def main():
     st.markdown('<p class="sub-header">Ask questions about your data in natural language</p>', unsafe_allow_html=True)
 
     # Tabs
-    tab1, tab2, tab3 = st.tabs(["💬 Query", "🗄️ Schema", "📈 Metrics"])
+    tab1, tab2, tab3, tab4 = st.tabs(["💬 Query", "🗄️ Schema", "🔧 Pipeline", "📈 Metrics"])
 
     with tab1:
         render_query_tab(context, conn_info)
@@ -624,6 +803,9 @@ def main():
         render_schema_tab(context)
 
     with tab3:
+        render_pipeline_tab(context)
+
+    with tab4:
         render_metrics_tab(context)
 
     # Footer
