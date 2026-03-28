@@ -69,6 +69,34 @@ st.markdown("""
         border: 1px solid #ddd;
         border-radius: 8px;
     }
+    .raw-table {
+        background: #fff3cd;
+        border: 2px solid #ffc107;
+        border-radius: 8px;
+        padding: 10px;
+        margin: 5px;
+    }
+    .staging-view {
+        background: #cce5ff;
+        border: 2px solid #007bff;
+        border-radius: 8px;
+        padding: 10px;
+        margin: 5px;
+    }
+    .mart-table {
+        background: #d4edda;
+        border: 2px solid #28a745;
+        border-radius: 8px;
+        padding: 10px;
+        margin: 5px;
+    }
+    .layer-header {
+        font-weight: bold;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+        text-align: center;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -100,6 +128,33 @@ def get_connection_info():
         "host": host,
         "database": db,
     }
+
+
+@st.cache_data
+def get_table_counts():
+    """Get row counts for all tables."""
+    counts = {}
+    tables = [
+        # Raw tables
+        ("region", "raw"), ("nation", "raw"), ("customer", "raw"),
+        ("supplier", "raw"), ("part", "raw"), ("partsupp", "raw"),
+        ("orders", "raw"), ("lineitem", "raw"),
+        # dbt models
+        ("stg_orders", "staging"), ("stg_lineitems", "staging"),
+        ("stg_customers", "staging"), ("stg_suppliers", "staging"),
+        ("stg_parts", "staging"), ("stg_nations", "staging"),
+        ("fct_order_items", "mart"), ("dim_customers", "mart"),
+        ("dim_suppliers", "mart"),
+    ]
+
+    for table, layer in tables:
+        try:
+            result = execute_query(f"SELECT COUNT(*) as cnt FROM {table}")
+            counts[table] = {"count": result["rows"][0]["cnt"], "layer": layer}
+        except:
+            counts[table] = {"count": "N/A", "layer": layer}
+
+    return counts
 
 
 def run_query(question: str, context: dict, use_llm: bool = False):
@@ -155,63 +210,11 @@ def run_query(question: str, context: dict, use_llm: bool = False):
         }
 
 
-def main():
-    # Load context
-    try:
-        context = load_context()
-    except FileNotFoundError:
-        st.error("❌ dbt artifacts not found. Run `dbt build` first.")
-        st.stop()
-
-    conn_info = get_connection_info()
-
-    # Sidebar
-    with st.sidebar:
-        st.markdown("### 🔌 Database Connection")
-        st.markdown(f"""
-        <div class="connection-info">
-            <strong>Host:</strong> {conn_info['host']}<br>
-            <strong>Database:</strong> {conn_info['database']}<br>
-            <strong>User:</strong> {conn_info['user']}
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        st.markdown("### 📊 Semantic Layer")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Models", len(context['models']))
-            st.metric("Metrics", len(context['metrics']))
-        with col2:
-            st.metric("Sources", len(context['sources']))
-            st.metric("Dimensions", sum(len(sm['dimensions']) for sm in context['semantic_models']))
-
-        st.markdown("---")
-
-        # Metrics list
-        with st.expander("📈 Available Metrics", expanded=False):
-            for metric in context['metrics']:
-                st.markdown(f"**{metric['name']}**")
-                st.caption(metric.get('description', 'No description'))
-
-        # Dimensions list
-        with st.expander("🏷️ Available Dimensions", expanded=False):
-            for sm in context['semantic_models']:
-                for dim in sm['dimensions']:
-                    st.markdown(f"**{dim['name']}** ({dim['type']})")
-
-        st.markdown("---")
-
-        # Settings
-        st.markdown("### ⚙️ Settings")
-        use_llm = st.checkbox("Use Claude LLM", value=False,
-                              help="Use Claude API for more flexible query generation")
-        show_lineage = st.checkbox("Show Data Lineage", value=True)
-
-    # Main content
-    st.markdown('<p class="main-header">🔮 dbt Semantic Layer Agent</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Ask questions about your data in natural language</p>', unsafe_allow_html=True)
+def render_query_tab(context: dict, conn_info: dict):
+    """Render the main query interface tab."""
+    # Settings from session state
+    use_llm = st.session_state.get("use_llm", False)
+    show_lineage = st.session_state.get("show_lineage", True)
 
     # Query input
     col1, col2 = st.columns([5, 1])
@@ -313,6 +316,315 @@ def main():
             if result.get("query"):
                 st.markdown("**Generated SQL (failed to execute):**")
                 st.code(result["query"], language="sql")
+
+
+def render_schema_tab(context: dict):
+    """Render the database schema visualization tab."""
+
+    st.markdown("### 🗄️ TPC-H Database Schema")
+    st.markdown("Visual representation of raw tables and dbt transformations")
+
+    # Get table counts
+    with st.spinner("Loading table statistics..."):
+        counts = get_table_counts()
+
+    # Legend
+    st.markdown("""
+    **Legend:**
+    🟡 Raw Tables (TPC-H) → 🔵 Staging Views (dbt) → 🟢 Mart Tables (dbt)
+    """)
+
+    st.markdown("---")
+
+    # Data Flow Diagram using Graphviz
+    st.markdown("### 📊 Data Flow Diagram")
+
+    graphviz_diagram = """
+    digraph G {
+        rankdir=TB;
+        node [shape=box, style="rounded,filled", fontname="Helvetica"];
+        edge [color="#666666"];
+
+        // Raw tables cluster
+        subgraph cluster_raw {
+            label="🟡 Raw Tables (TPC-H Source)";
+            style=filled;
+            fillcolor="#fff3cd";
+            color="#ffc107";
+
+            region [label="region\\n5 rows", fillcolor="#ffecb3"];
+            nation [label="nation\\n25 rows", fillcolor="#ffecb3"];
+            customer [label="customer\\n15K rows", fillcolor="#ffecb3"];
+            supplier [label="supplier\\n1K rows", fillcolor="#ffecb3"];
+            part [label="part\\n20K rows", fillcolor="#ffecb3"];
+            partsupp [label="partsupp\\n80K rows", fillcolor="#ffecb3"];
+            orders [label="orders\\n150K rows", fillcolor="#ffecb3"];
+            lineitem [label="lineitem\\n600K rows", fillcolor="#ffecb3"];
+        }
+
+        // Staging views cluster
+        subgraph cluster_staging {
+            label="🔵 Staging Views (dbt)";
+            style=filled;
+            fillcolor="#cce5ff";
+            color="#007bff";
+
+            stg_nations [label="stg_nations", fillcolor="#b3d9ff"];
+            stg_customers [label="stg_customers", fillcolor="#b3d9ff"];
+            stg_suppliers [label="stg_suppliers", fillcolor="#b3d9ff"];
+            stg_parts [label="stg_parts", fillcolor="#b3d9ff"];
+            stg_orders [label="stg_orders", fillcolor="#b3d9ff"];
+            stg_lineitems [label="stg_lineitems", fillcolor="#b3d9ff"];
+        }
+
+        // Mart tables cluster
+        subgraph cluster_marts {
+            label="🟢 Mart Tables (dbt)";
+            style=filled;
+            fillcolor="#d4edda";
+            color="#28a745";
+
+            dim_customers [label="dim_customers\\n15K rows", fillcolor="#b8e6c1"];
+            dim_suppliers [label="dim_suppliers\\n1K rows", fillcolor="#b8e6c1"];
+            fct_order_items [label="fct_order_items\\n600K rows", fillcolor="#b8e6c1"];
+        }
+
+        // Semantic layer cluster
+        subgraph cluster_semantic {
+            label="🔮 Semantic Layer";
+            style=filled;
+            fillcolor="#e2d5f1";
+            color="#6f42c1";
+
+            metrics [label="Metrics:\\ntotal_revenue\\norder_count\\navg_order_value\\nreturn_rate", fillcolor="#d4c4e8"];
+        }
+
+        // Raw to Staging edges
+        region -> stg_nations;
+        nation -> stg_nations;
+        customer -> stg_customers;
+        supplier -> stg_suppliers;
+        part -> stg_parts;
+        orders -> stg_orders;
+        lineitem -> stg_lineitems;
+
+        // Staging to Marts edges
+        stg_nations -> dim_customers;
+        stg_customers -> dim_customers;
+        stg_nations -> dim_suppliers;
+        stg_suppliers -> dim_suppliers;
+        stg_orders -> fct_order_items;
+        stg_lineitems -> fct_order_items;
+        stg_customers -> fct_order_items;
+        stg_nations -> fct_order_items;
+
+        // Marts to Semantic edges
+        fct_order_items -> metrics;
+        dim_customers -> metrics;
+        dim_suppliers -> metrics;
+    }
+    """
+
+    st.graphviz_chart(graphviz_diagram, use_container_width=True)
+
+    st.markdown("---")
+
+    # Detailed table view
+    st.markdown("### 📋 Table Details")
+
+    # Three columns for the three layers
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown('<div class="layer-header" style="background: #fff3cd;">🟡 Raw Tables (TPC-H)</div>', unsafe_allow_html=True)
+
+        raw_tables = [
+            ("region", "Geographic regions", "r_regionkey, r_name"),
+            ("nation", "Countries", "n_nationkey, n_name, n_regionkey"),
+            ("customer", "Customers", "c_custkey, c_name, c_nationkey, c_mktsegment"),
+            ("supplier", "Suppliers", "s_suppkey, s_name, s_nationkey"),
+            ("part", "Products", "p_partkey, p_name, p_type, p_retailprice"),
+            ("partsupp", "Part-Supplier links", "ps_partkey, ps_suppkey, ps_supplycost"),
+            ("orders", "Orders", "o_orderkey, o_custkey, o_orderdate, o_totalprice"),
+            ("lineitem", "Order lines", "l_orderkey, l_partkey, l_quantity, l_extendedprice"),
+        ]
+
+        for table, desc, cols in raw_tables:
+            count = counts.get(table, {}).get("count", "N/A")
+            with st.expander(f"**{table}** ({count:,} rows)" if isinstance(count, int) else f"**{table}**"):
+                st.markdown(f"*{desc}*")
+                st.markdown(f"**Key columns:** `{cols}`")
+
+    with col2:
+        st.markdown('<div class="layer-header" style="background: #cce5ff;">🔵 Staging Views (dbt)</div>', unsafe_allow_html=True)
+
+        staging_views = [
+            ("stg_nations", "nation + region joined", "nation_id, nation_name, region_name"),
+            ("stg_customers", "Cleaned customers", "customer_id, customer_name, market_segment"),
+            ("stg_suppliers", "Cleaned suppliers", "supplier_id, supplier_name, nation_id"),
+            ("stg_parts", "Cleaned parts", "part_id, part_name, part_type, retail_price"),
+            ("stg_orders", "Cleaned orders", "order_id, customer_id, order_date, total_price"),
+            ("stg_lineitems", "Lines + revenue calc", "order_id, quantity, line_revenue"),
+        ]
+
+        for view, desc, cols in staging_views:
+            count = counts.get(view, {}).get("count", "N/A")
+            with st.expander(f"**{view}** ({count:,} rows)" if isinstance(count, int) else f"**{view}**"):
+                st.markdown(f"*{desc}*")
+                st.markdown(f"**Key columns:** `{cols}`")
+
+                # Show transformation
+                if view == "stg_lineitems":
+                    st.code("line_revenue = extended_price * (1 - discount)", language="sql")
+                elif view == "stg_nations":
+                    st.code("JOIN region ON nation.n_regionkey = region.r_regionkey", language="sql")
+
+    with col3:
+        st.markdown('<div class="layer-header" style="background: #d4edda;">🟢 Mart Tables (dbt)</div>', unsafe_allow_html=True)
+
+        mart_tables = [
+            ("dim_customers", "Customer dimension", "customer_id, customer_name, nation_name, region_name, market_segment"),
+            ("dim_suppliers", "Supplier dimension", "supplier_id, supplier_name, nation_name, region_name"),
+            ("fct_order_items", "Fact table", "order_id, line_revenue, fulfillment_days, market_segment, customer_region"),
+        ]
+
+        for table, desc, cols in mart_tables:
+            count = counts.get(table, {}).get("count", "N/A")
+            with st.expander(f"**{table}** ({count:,} rows)" if isinstance(count, int) else f"**{table}**"):
+                st.markdown(f"*{desc}*")
+                st.markdown(f"**Key columns:** `{cols}`")
+
+        st.markdown("---")
+        st.markdown('<div class="layer-header" style="background: #e2d5f1;">🔮 Semantic Layer</div>', unsafe_allow_html=True)
+
+        with st.expander("**Metrics**"):
+            for metric in context['metrics']:
+                st.markdown(f"• **{metric['name']}**: {metric.get('description', '')}")
+
+        with st.expander("**Dimensions**"):
+            for sm in context['semantic_models']:
+                for dim in sm['dimensions']:
+                    st.markdown(f"• **{dim['name']}** ({dim['type']})")
+
+    st.markdown("---")
+
+    # Relationships diagram
+    st.markdown("### 🔗 Table Relationships (TPC-H)")
+
+    st.code("""
+    region (1) ──────► (N) nation (1) ──────► (N) customer (1) ──────► (N) orders (1) ──────► (N) lineitem
+                              │                                                                    ▲
+                              │                                                                    │
+                              └──────► (N) supplier (1) ──────────────────────────────────────────┘
+                                              │                                                    ▲
+                                              │                                                    │
+                                              └──────► (N) partsupp (N) ◄────── (1) part ─────────┘
+    """, language="text")
+
+
+def render_metrics_tab(context: dict):
+    """Render the metrics explorer tab."""
+
+    st.markdown("### 📈 Semantic Layer Metrics")
+    st.markdown("Explore all available metrics and their definitions")
+
+    # Metrics table
+    metrics_data = []
+    for metric in context['metrics']:
+        metrics_data.append({
+            "Metric": metric['name'],
+            "Type": metric.get('type', 'simple'),
+            "Description": metric.get('description', ''),
+            "Measure/Formula": metric.get('measure', metric.get('expression', '')),
+        })
+
+    df = pd.DataFrame(metrics_data)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # Metric lineage explorer
+    st.markdown("### 🔍 Metric Lineage Explorer")
+
+    metric_names = [m['name'] for m in context['metrics']]
+    selected_metric = st.selectbox("Select a metric to trace:", metric_names)
+
+    if selected_metric:
+        lineage = explain_lineage(selected_metric, context)
+        st.markdown(lineage)
+
+
+def main():
+    # Load context
+    try:
+        context = load_context()
+    except FileNotFoundError:
+        st.error("❌ dbt artifacts not found. Run `dbt build` first.")
+        st.stop()
+
+    conn_info = get_connection_info()
+
+    # Sidebar
+    with st.sidebar:
+        st.markdown("### 🔌 Database Connection")
+        st.markdown(f"""
+        <div class="connection-info">
+            <strong>Host:</strong> {conn_info['host']}<br>
+            <strong>Database:</strong> {conn_info['database']}<br>
+            <strong>User:</strong> {conn_info['user']}
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        st.markdown("### 📊 Semantic Layer")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Models", len(context['models']))
+            st.metric("Metrics", len(context['metrics']))
+        with col2:
+            st.metric("Sources", len(context['sources']))
+            st.metric("Dimensions", sum(len(sm['dimensions']) for sm in context['semantic_models']))
+
+        st.markdown("---")
+
+        # Metrics list
+        with st.expander("📈 Available Metrics", expanded=False):
+            for metric in context['metrics']:
+                st.markdown(f"**{metric['name']}**")
+                st.caption(metric.get('description', 'No description'))
+
+        # Dimensions list
+        with st.expander("🏷️ Available Dimensions", expanded=False):
+            for sm in context['semantic_models']:
+                for dim in sm['dimensions']:
+                    st.markdown(f"**{dim['name']}** ({dim['type']})")
+
+        st.markdown("---")
+
+        # Settings
+        st.markdown("### ⚙️ Settings")
+        st.session_state["use_llm"] = st.checkbox(
+            "Use Claude LLM", value=False,
+            help="Use Claude API for more flexible query generation"
+        )
+        st.session_state["show_lineage"] = st.checkbox("Show Data Lineage", value=True)
+
+    # Main content - Header
+    st.markdown('<p class="main-header">🔮 dbt Semantic Layer Agent</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Ask questions about your data in natural language</p>', unsafe_allow_html=True)
+
+    # Tabs
+    tab1, tab2, tab3 = st.tabs(["💬 Query", "🗄️ Schema", "📈 Metrics"])
+
+    with tab1:
+        render_query_tab(context, conn_info)
+
+    with tab2:
+        render_schema_tab(context)
+
+    with tab3:
+        render_metrics_tab(context)
 
     # Footer
     st.markdown("---")
